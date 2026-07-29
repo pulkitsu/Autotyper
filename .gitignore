@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Packaging
+build/
+dist/
+release/
+*.egg-info/
+
+# Local application state
+settings.json
+
+# Editors and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

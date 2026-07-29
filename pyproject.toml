@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autotyper-studio"
+version = "2.0.0"
+description = "A safe, scriptable desktop auto typer with reusable snippets."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Pulkit Sulekh" }]
+dependencies = [
+  "keyboard>=0.13.5,<1",
+  "PySide6-Essentials>=6.7,<7",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0,<7"]
+
+[project.gui-scripts]
+autotyper-studio = "main:main"
+
+[tool.setuptools]
+py-modules = [
+  "config",
+  "gui",
+  "hotkeys",
+  "main",
+  "models",
+  "native_glass",
+  "script_parser",
+  "typer",
+]

@@ -1,58 +1,95 @@
-# Autotyper
+# AutoTyper Studio
 
-A lightweight, desktop-based automated typing application built in Python that simulates human-like keystrokes. Designed to streamline repetitive data entry, test automation, and workflow optimization, it provides a seamless user experience via a responsive graphical interface.
+AutoTyper Studio is a Windows-first desktop app for safe, repeatable text entry.
+It combines reusable snippets, per-snippet global shortcuts, natural timing,
+Unicode input, and a small script language in one responsive interface.
 
-## 🚀 Features
+## What makes version 2 different
 
-* **Human-Like Simulation:** Configures natural typing intervals instead of instant, detectable copy-pasting.
-* **Customizable Delays:** Fine-tune interval delays and pre-start countdowns to match system responsiveness or application requirements.
-* **Hotkey Integration:** Global keyboard shortcuts to safely start, pause, or abort typing operations instantly.
-* **Intuitive GUI:** Built with a clean, user-friendly desktop interface for zero-configuration execution.
-* **Cross-Platform Compatibility:** Runs seamlessly across Windows, macOS, and Linux systems.
+- **Snippet library:** Save any number of named typing scripts and assign each
+  one its own global shortcut.
+- **Interruptible controls:** Pause, resume, or stop during typing, countdowns,
+  scripted waits, and delays between repeats.
+- **Natural rhythm:** Configure the base delay, random jitter, and an extra
+  pause after punctuation for every snippet.
+- **Unicode input:** Type non-English text without silently replacing it with
+  unsupported characters.
+- **Action tokens:** Mix text with keys, waits, and shortcuts.
+- **Portable libraries:** Import or export every snippet and setting as JSON.
+- **Safer clipboard behavior:** Clipboard text is loaded only when you click
+  the button; focusing the app never destroys an edit.
+- **Durable settings:** Atomic, UTF-8 settings are stored in the user's local
+  application-data folder instead of beside the executable.
+- **Native Windows glass:** The interface uses Windows Acrylic/Mica composition
+  with genuinely translucent Qt panels instead of a painted blur imitation.
+- **Three persistent themes:** Switch between Light, Dark, and live
+  background-reactive Glass from the icon-only title-bar control.
+- **Clear timing controls:** Every numeric field uses aligned red decrease and
+  green increase buttons with the unit shown in its field label.
+- **Release discipline:** The repository includes automated engine, parser,
+  migration, and Windows packaging checks.
 
-## 🛠️ Tech Stack
+The goal is to beat the core MurGee Auto Typer workflow with a modern, reusable
+library and stronger run controls. OCR and general mouse automation are
+deliberately outside this app's scope.
 
-* **Language:** Python 3.x
-* **Automation Framework:** [PyAutoGUI](https://pyautogui.readthedocs.io/) (GUI automation and keystroke simulation)
-* **GUI Framework:** Tkinter (Python's built-in standard GUI library)
+## Script tokens
 
-## 📦 Installation & Setup
+Tokens are case-insensitive and can appear anywhere in a snippet:
 
-Copy and run the following commands sequentially in your terminal to set up and start the application:
+| Token | Result |
+| --- | --- |
+| `{ENTER}`, `{TAB}`, `{ESC}` | Press a special key |
+| `{UP}`, `{DOWN}`, `{LEFT}`, `{RIGHT}` | Press an arrow key |
+| `{WAIT 750}` | Wait for 750 milliseconds |
+| `{CTRL+ENTER}`, `{CTRL+SHIFT+V}` | Press a key combination |
+| `{{` or `}}` | Type a literal opening or closing brace |
 
-```bash
-# 1. Clone the Repository
-git clone [https://github.com/pulkitsu/Autotyper.git](https://github.com/pulkitsu/Autotyper.git)
+Unknown tokens such as `{customer_name}` are typed literally, so ordinary
+templates and code do not break unexpectedly.
+
+## Run from source
+
+Requirements:
+
+- Windows 10 or 11
+- Python 3.10+
+
+```powershell
+git clone https://github.com/pulkitsu/Autotyper.git
 cd Autotyper
-
-# 2. Set Up a Virtual Environment (Optional but Recommended)
-# For Windows:
-python -m venv venv
-venv\Scripts\activate
-# For macOS/Linux:
-python3 -m venv venv
-source venv/bin/activate
-
-# 3. Install Dependencies
-pip install pyautogui
-
-# 4. Run the Application
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 python main.py
 ```
-## 🎮 How to Use
-* **Input Text:** Paste or type the text sequence you want automated into the main application text area.
 
-* **Configure Speed:** Set your preferred delay interval (in seconds) between individual keystrokes or words.
+Global keyboard hooks can interact only with applications running at the same
+or a lower Windows integrity level. If you need to type into an elevated app,
+run AutoTyper Studio at the same level.
 
-* **Set Countdown:** Give yourself a few seconds of buffer time to click into your target text field before typing begins.
+## Test and build
 
-* **Execute:** Click the Start button (or press the designated hotkey), click into your destination window (e.g., Notepad, Excel, browser input), and watch it type.
+The core tests do not emit real keyboard input.
 
-* **Emergency Stop:** Utilize the built-in global fail-safe hotkey if you need to stop execution immediately.
+```powershell
+python -m unittest discover -s tests -v
+python -m pip install -r requirements-dev.txt
+pyinstaller --clean --noconfirm main.spec
+```
 
-## 📜 Copyright and License
-Copyright (c) 2026 Pulkit Sulekh. All Rights Reserved.
+The folder-based package is created at
+`dist/AutoTyperStudio/AutoTyperStudio.exe`. GitHub Actions runs the same tests
+and publishes the unsigned Windows package as a workflow artifact. Production
+releases should be Authenticode-signed before distribution.
 
-This project and its original content, features, and functionality are owned by Pulkit Sulekh and are protected by international copyright, trademark, patent, trade secret, and other intellectual property or proprietary rights laws.
+## Safety
 
-No license is granted to use, modify, or distribute this software without explicit permission.
+AutoTyper Studio types into whichever window is focused after the countdown.
+Review every script, use a countdown while testing, and keep the Stop shortcut
+available. The app does not submit forms or click buttons on its own.
+
+## Copyright
+
+Copyright © 2026 Pulkit Sulekh. All rights reserved. No license is granted to
+use, modify, or distribute this software without explicit permission.
