@@ -62,6 +62,22 @@ non-persistent seeded store explicit in the startup message. It starts with
 three safe example macros, which makes it convenient for trying the UI, but it
 is not the durable configuration.
 
+### Durable local library without Docker
+
+For a persistent browser-based library without starting PostgreSQL, create a
+`web/.env` file with an empty `DATABASE_URL` and a local file path:
+
+```dotenv
+DATABASE_URL=
+AUTOTYPER_DATA_FILE=./data/autotyper-library.json
+PORT=3001
+HOST=127.0.0.1
+```
+
+Then run `npm start` and open `http://localhost:3001`. The FileStore uses
+atomic writes and is the same persistence model used by the packaged desktop
+app. Use PostgreSQL when multiple local processes need to share the library.
+
 ### Native Windows desktop app
 
 From this `web` directory, run the current React app in a native desktop
