@@ -1,9 +1,21 @@
-# AutoTyper — Full-stack web assignment
+# AutoTyper — web and desktop assignment
 
 The assignment implementation is the React + Express + PostgreSQL application
 in [web/README.md](web/README.md). It includes the MurGee-inspired script
-library, recorder, browser target-window typing engine, execution history,
-schema/seed data, setup steps, and production deployment instructions.
+library, recorder, target-window typing engine, execution history, schema/seed
+data, setup steps, and production deployment instructions. The exact same React
+interface can also run as a standalone Windows desktop app through Electron:
+
+```powershell
+cd web
+npm install
+npm run desktop
+```
+
+Build the portable desktop executable with `npm run desktop:package`; it is
+written to `web/desktop-dist/` and keeps its own persistent local script
+library. The older PySide desktop project below remains preserved as a separate
+predecessor/reference, not as the current desktop UI.
 
 The original Windows PySide desktop project remains below as a separate,
 preserved predecessor/reference.

@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import { Pool } from "pg";
 
@@ -83,7 +85,7 @@ function clone(value) {
 
 /**
  * A non-persistent convenience store for local UI work. It is used only when
- * DATABASE_URL is absent, so a production configuration cannot silently lose data.
+ * neither DATABASE_URL nor AUTOTYPER_DATA_FILE is configured.
  */
 export class MemoryStore {
   kind = "memory";
@@ -220,6 +222,93 @@ export class MemoryStore {
     if (duplicate) {
       throw hotkeyConflict(hotkey);
     }
+  }
+}
+
+/**
+ * A durable local store used by the packaged desktop companion. It deliberately
+ * has the same API as PostgreSQL and MemoryStore so the React application does
+ * not need a desktop-only data path. Updates are written atomically to avoid
+ * corrupting a user's script library if the desktop app is closed mid-save.
+ */
+export class FileStore extends MemoryStore {
+  kind = "file";
+
+  constructor(filePath, seed = DEFAULT_SCRIPTS) {
+    super(seed);
+    this.filePath = filePath;
+  }
+
+  static async open(filePath) {
+    const store = new FileStore(filePath);
+    await store.#hydrate();
+    return store;
+  }
+
+  async createScript(input) {
+    const script = await super.createScript(input);
+    await this.#persist();
+    return script;
+  }
+
+  async updateScript(id, input) {
+    const script = await super.updateScript(id, input);
+    if (script) await this.#persist();
+    return script;
+  }
+
+  async deleteScript(id) {
+    const script = await super.deleteScript(id);
+    if (script) await this.#persist();
+    return script;
+  }
+
+  async importScripts(scripts, options) {
+    const imported = await super.importScripts(scripts, options);
+    await this.#persist();
+    return imported;
+  }
+
+  async createHistory(input) {
+    const entry = await super.createHistory(input);
+    await this.#persist();
+    return entry;
+  }
+
+  async clearHistory() {
+    const cleared = await super.clearHistory();
+    await this.#persist();
+    return cleared;
+  }
+
+  async #hydrate() {
+    try {
+      const raw = await readFile(this.filePath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.scripts) || !Array.isArray(parsed.history)) {
+        throw new Error("The store must contain scripts and history arrays.");
+      }
+      this.scripts = structuredClone(parsed.scripts);
+      this.history = structuredClone(parsed.history);
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        await this.#persist();
+        return;
+      }
+      throw new Error(`Could not read the desktop script library: ${error.message}`);
+    }
+  }
+
+  async #persist() {
+    await mkdir(path.dirname(this.filePath), { recursive: true });
+    const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
+    const data = JSON.stringify(
+      { version: 1, scripts: this.scripts, history: this.history },
+      null,
+      2,
+    );
+    await writeFile(temporaryPath, data, "utf8");
+    await rename(temporaryPath, this.filePath);
   }
 }
 
@@ -416,9 +505,15 @@ export class PostgresStore {
   }
 }
 
-export async function createStore({ databaseUrl = process.env.DATABASE_URL } = {}) {
-  if (!databaseUrl) {
-    return new MemoryStore();
+export async function createStore({
+  databaseUrl = process.env.DATABASE_URL,
+  dataFile = process.env.AUTOTYPER_DATA_FILE,
+} = {}) {
+  if (databaseUrl) {
+    return PostgresStore.connect(databaseUrl);
   }
-  return PostgresStore.connect(databaseUrl);
+  if (dataFile) {
+    return FileStore.open(dataFile);
+  }
+  return new MemoryStore();
 }

@@ -1,9 +1,13 @@
-# Auto Typer Web
+# Auto Typer — browser and desktop
 
 A full-stack, browser-safe take on MurGee Auto Typer. It keeps the original
 utility-software feel—a dense `List of Auto Texts` grid, compact record editor,
 and status strip—while providing a browser `Target Window` instead of trying to
 send keystrokes to another operating-system process.
+
+The same current React interface can also be opened as a native Windows desktop
+application through Electron. It is not the repository's older PySide app: it
+uses this exact script library, editor, simulator, history, and theme UI.
 
 ## Stack
 
@@ -12,6 +16,7 @@ send keystrokes to another operating-system process.
 - PostgreSQL 16 (schema, seed data, and Docker Compose included)
 - A deliberately marked in-memory store for quick frontend development only
 - Node's built-in test runner; no test framework dependency
+- Electron + Electron Builder for the optional native Windows desktop build
 
 ## Features
 
@@ -47,6 +52,31 @@ npm run dev
 Open `http://localhost:5173`. With `DATABASE_URL` unset, the API makes its
 non-persistent seeded store explicit in the startup message. This is convenient
 for trying the UI, but it is not the production configuration.
+
+### Native Windows desktop app
+
+From this `web` directory, run the current React app in a native desktop
+window:
+
+```powershell
+npm install
+npm run desktop
+```
+
+Electron builds the client, starts an internal loopback-only service on a
+random port, and opens the same UI in a Windows window. Its scripts and history
+are persisted locally in Electron's user-data folder as `library.json`; this is
+separate from the browser development server and PostgreSQL library.
+
+To create a portable Windows executable:
+
+```powershell
+npm run desktop:package
+```
+
+The output is `desktop-dist/AutoTyper-Desktop-1.0.0-portable.exe`. It is a
+generated, ignored artifact; run it directly on Windows x64 without Node.js.
+`npm run desktop:dir` creates an unpacked build for troubleshooting.
 
 ### PostgreSQL development setup
 
@@ -120,9 +150,10 @@ split across simulated keystrokes.
 ## Assumptions and browser boundary
 
 - The assignment's “Target Window” is modeled as the dedicated textarea in the
-  SPA. A normal browser cannot safely send real global operating-system input.
-- Hotkeys therefore work while focus is anywhere **inside the app tab**. The UI
-  calls out this boundary and rejects browser/OS-reserved shortcuts.
+  SPA. The browser and Electron desktop companion intentionally simulate typing
+  there rather than sending real keystrokes to another operating-system app.
+- Hotkeys work while focus is anywhere **inside Auto Typer**. The UI calls out
+  this boundary and rejects browser/OS-reserved shortcuts.
 - There is one default user and no authentication, as requested.
 - The target starts at its own current caret/selection and remains editable by
   the user during simulation.

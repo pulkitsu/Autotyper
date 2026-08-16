@@ -322,7 +322,7 @@ function Editor({
           />
         </Field>
 
-        <Field label="Shortcut Key" hint="App-wide while this tab is focused">
+        <Field label="Shortcut Key" hint="App-wide while Auto Typer is focused">
           <div className="hotkey-input-group">
             <input
               className={conflict || (draft.hotkey && !hotkeyValidity.valid) ? "input-warning" : ""}
@@ -449,7 +449,7 @@ function TargetWindow({ run, selectedScript, target, selection, onTargetChange, 
           <div className="progress-track"><i style={{ width: `${run.total ? (run.progress / run.total) * 100 : 0}%` }} /></div>
         </div>
       </div>
-      <p className="target-footnote">Browser hotkeys are app-wide, not operating-system global. {selection.start !== selection.end ? "Typing replaces the selected target text." : ""}</p>
+      <p className="target-footnote">Hotkeys work throughout Auto Typer, not across other operating-system apps. {selection.start !== selection.end ? "Typing replaces the selected target text." : ""}</p>
     </section>
   );
 }

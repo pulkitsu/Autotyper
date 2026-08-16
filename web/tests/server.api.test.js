@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { createApp } from "../server/app.js";
-import { MemoryStore } from "../server/store.js";
+import { FileStore, MemoryStore } from "../server/store.js";
 import { normalizeHotkey } from "../server/validation.js";
 
 async function startMemoryApi() {
@@ -120,4 +123,31 @@ test("server-side hotkey policy matches browser-safe shortcuts", () => {
   assert.equal(normalizeHotkey("ctrl + left"), "ctrl+arrowleft");
   assert.throws(() => normalizeHotkey("ctrl+r"), /reserved/i);
   assert.throws(() => normalizeHotkey("shift+a"), /too easy/i);
+});
+
+test("desktop file store preserves scripts and execution history across launches", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "autotyper-desktop-store-"));
+  const filePath = path.join(directory, "library.json");
+  context.after(() => rm(directory, { recursive: true, force: true }));
+
+  const firstLaunch = await FileStore.open(filePath);
+  const script = await firstLaunch.createScript({
+    name: "Desktop script",
+    body: "Hello from the desktop app",
+    hotkey: "ctrl+alt+6",
+    charactersPerSecond: 25,
+    startDelayMs: 0,
+  });
+  const historyEntry = await firstLaunch.createHistory({
+    scriptId: script.id,
+    startedAt: "2026-08-17T00:00:00.000Z",
+    durationMs: 123,
+    status: "completed",
+  });
+
+  const secondLaunch = await FileStore.open(filePath);
+  const scripts = await secondLaunch.listScripts();
+  const history = await secondLaunch.listHistory({ limit: 10 });
+  assert.equal(scripts.some((entry) => entry.id === script.id), true);
+  assert.deepEqual(history[0], historyEntry);
 });
