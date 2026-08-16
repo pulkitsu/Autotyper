@@ -1,4 +1,14 @@
-# AutoTyper Studio
+# AutoTyper — Full-stack web assignment
+
+The assignment implementation is the React + Express + PostgreSQL application
+in [web/README.md](web/README.md). It includes the MurGee-inspired script
+library, recorder, browser target-window typing engine, execution history,
+schema/seed data, setup steps, and production deployment instructions.
+
+The original Windows PySide desktop project remains below as a separate,
+preserved predecessor/reference.
+
+## AutoTyper Studio (desktop predecessor)
 
 AutoTyper Studio is a Windows-first desktop app for safe, repeatable text entry.
 It combines reusable snippets, per-snippet global shortcuts, natural timing,

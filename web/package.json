@@ -1,0 +1,31 @@
+{
+  "name": "autotyper-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MurGee-inspired web Auto Typer assignment implementation.",
+  "scripts": {
+    "dev": "vite",
+    "dev:api": "node server/index.js",
+    "migrate": "node server/migrate.js",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server/index.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "pg": "^8.16.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.2",
+    "vite": "^7.1.3"
+  }
+}
