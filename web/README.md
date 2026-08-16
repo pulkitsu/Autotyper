@@ -1,9 +1,9 @@
 # Auto Typer — browser and desktop
 
 A full-stack, browser-safe take on MurGee Auto Typer. It keeps the original
-utility-software feel—a dense `List of Auto Texts` grid, compact record editor,
-and status strip—while providing a browser `Target Window` instead of trying to
-send keystrokes to another operating-system process.
+utility-software feel—a dense Macro Library grid, compact record editor, and
+status strip—while providing a visual `Target Canvas` instead of trying to send
+keystrokes or clicks to another operating-system process.
 
 The same current React interface can also be opened as a native Windows desktop
 application through Electron. It is not the repository's older PySide app: it
@@ -20,16 +20,24 @@ uses this exact script library, editor, simulator, history, and theme UI.
 
 ## Features
 
-- Script library with search, add, edit, delete, and app-wide hotkey filtering
+- Macro Library with create/edit/delete, search by name or hotkey, and folders
+  and tags for large collections
+- Ordered `Type Text`, `Click`, `Move`, `Wait`, and nested `Loop` steps;
+  duplicate/delete/reorder controls and undo/redo while editing
 - Hotkey recorder with canonicalization, browser-reserved shortcut protection,
   and whole-library duplicate detection
-- Configurable characters-per-second and initial delay
-- Character-by-character target-window simulation with pause, resume, and stop
+- Configurable characters-per-second, startup delay, click interval, repeat
+  count/continuous/duration modes, and a 10-clicks/second runaway safeguard
+- Character-by-character Target Canvas playback with pause/resume, a visible
+  current macro, `Esc` kill switch, and optional click/move boundary
 - `{Tab}`, `{Enter}`, and `{Space}` special keys, plus `{Backspace}`,
-  `{Delete}`, arrow keys, `{Home}`, `{End}`, and `{Wait 500}`
-- Execution history with start timestamp, run duration, and completion/stopped status
-- PostgreSQL-backed import/export JSON, dark theme, Unicode/grapheme-safe text,
-  and responsive layouts
+  `{Delete}`, arrows, `{Home}`, `{End}`, and `{Wait 500}`
+- Variables: `{date}`, `{time}`, `{counter}`, `{clipboard}`, and CSV-driven
+  `{csv:ColumnName}` mail merge; a completed run advances to the next row
+- Canvas record mode for local typing/click capture, schedules while the local
+  app is open, run history, time-saved insight, and most-used macro analytics
+- PostgreSQL/FileStore-backed import/export JSON, dark theme,
+  Unicode/grapheme-safe text, and responsive layouts
 
 ## Run locally
 
@@ -50,8 +58,9 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. With `DATABASE_URL` unset, the API makes its
-non-persistent seeded store explicit in the startup message. This is convenient
-for trying the UI, but it is not the production configuration.
+non-persistent seeded store explicit in the startup message. It starts with
+three safe example macros, which makes it convenient for trying the UI, but it
+is not the durable configuration.
 
 ### Native Windows desktop app
 
@@ -64,9 +73,11 @@ npm run desktop
 ```
 
 Electron builds the client, starts an internal loopback-only service on a
-random port, and opens the same UI in a Windows window. Its scripts and history
-are persisted locally in Electron's user-data folder as `library.json`; this is
-separate from the browser development server and PostgreSQL library.
+random port, and opens the same UI in a Windows window. Its macro library,
+schedules, and history are persisted locally in Electron's user-data folder as
+`library.json`; this is separate from the browser development server and
+PostgreSQL library. The renderer is sandboxed, has no Node bridge, blocks new
+windows/navigation, and denies browser permission requests.
 
 To create a portable Windows executable:
 
@@ -98,7 +109,7 @@ The supplied Compose setup creates the `autotyper` database, executes
 `database/schema.sql`, and seeds three scripts automatically on first start.
 `npm run migrate` is safe to run again after that.
 
-## Production build and deployment
+## Local production build
 
 ```powershell
 npm run build
@@ -106,27 +117,27 @@ npm start
 ```
 
 `npm start` serves the Vite build and API from one Express process. Set
-`DATABASE_URL` to a managed PostgreSQL connection string for Render, Railway,
-or another Node host; set `DATABASE_SSL=true` if that provider requires TLS.
-For a Render/Railway service, use `npm install && npm run build` as the build
-command and `npm start` as the start command, with `web` as the root directory.
+`DATABASE_URL` to a PostgreSQL connection string for durable local data; set
+`DATABASE_SSL=true` only when your local database requires TLS. This project is
+designed to run locally—deployment is not required.
 
 ## Database design
 
-`scripts` owns reusable typing definitions:
+Legacy `scripts` owns reusable one-text typing definitions retained for import
+compatibility. The Macro Library uses the richer tables below:
 
 | Column | Purpose |
 | --- | --- |
-| `id` | UUID primary key |
-| `name`, `body` | User-facing comment and script text |
-| `hotkey` | Canonical shortcut, enforced unique case-insensitively |
-| `characters_per_second`, `start_delay_ms` | Per-script timing settings |
-| `created_at`, `updated_at` | Audit timestamps |
+| `macros.id`, `name`, `hotkey` | UUID, display name, and case-insensitive unique macro binding |
+| `folder`, `tags` | Organization metadata (`tags` is JSONB) |
+| `steps`, `repeat_config` | Ordered JSONB step document and bounded repeat policy |
+| `boundary`, `focus_trigger`, `mail_merge` | Safety area, future desktop focus rule, and CSV state |
+| `macro_execution_history` | Immutable macro-name/hotkey snapshots, result, duration, steps, and time saved |
+| `macro_schedules` | One-shot/interval configuration plus server-owned next-run bookkeeping |
 
-`execution_history` stores immutable run snapshots. It retains the script name
-and hotkey even if the source script is later renamed or deleted; `script_id`
-uses `ON DELETE SET NULL` for that reason. Indexes support hotkey uniqueness,
-recent scripts, and recent run history.
+Both history tables retain a name and hotkey snapshot even if their source is
+deleted. Indexes cover hotkey uniqueness, recent runs, folder lookup, and due
+schedules.
 
 ## Script tokens and typing semantics
 
@@ -147,16 +158,36 @@ templates such as `Hello {customer_name}` stay safe. Text is segmented into
 user-perceived graphemes, preventing emoji and combining characters from being
 split across simulated keystrokes.
 
+## Macro steps, variables, and safety
+
+`Type Text` steps resolve `{date}`, `{time}`, `{counter}`, `{clipboard}`, and
+`{csv:ColumnName}` before special-key parsing. Unknown variables stay literal;
+a missing CSV column is reported in the plan rather than executed as code.
+CSV import accepts quoted cells and advances without wrapping, so each
+successful invocation uses the next row until the dataset is exhausted.
+
+Click and Move steps are visual only in the Target Canvas. Their coordinates
+are clamped when a boundary is enabled. The runner enforces at least 100 ms
+between clicks (10 clicks/second), caps expanded loop plans, and can be stopped
+at any time with the visible Kill switch or `Esc`.
+
 ## Assumptions and browser boundary
 
-- The assignment's “Target Window” is modeled as the dedicated textarea in the
+- The assignment's target is modeled as the dedicated Target Canvas in the
   SPA. The browser and Electron desktop companion intentionally simulate typing
-  there rather than sending real keystrokes to another operating-system app.
+  and clicking there rather than sending real input to another operating-system
+  app.
 - Hotkeys work while focus is anywhere **inside Auto Typer**. The UI calls out
   this boundary and rejects browser/OS-reserved shortcuts.
+- Schedules run only while the local app is open. Focus-specific bindings are
+  stored as a desktop-ready rule, but are not yet wired to OS window detection.
 - There is one default user and no authentication, as requested.
 - The target starts at its own current caret/selection and remains editable by
   the user during simulation.
+- Cloud sync/team libraries, encryption for sensitive macro contents, browser
+  extension control, and true OS-wide typing/clicking are intentionally deferred
+  to explicit opt-in integrations. They must not be inferred from the local
+  simulator.
 
 ## Verification
 
@@ -166,4 +197,5 @@ npm run build
 ```
 
 The test suite covers parsing, Unicode and brace escaping, target-text edits,
-hotkey normalization/conflicts, and REST persistence/history flows.
+hotkey normalization/conflicts, macro plan/loop/CSV/rate-limit behavior, and
+REST persistence/history/schedule flows.

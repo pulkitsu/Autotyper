@@ -1,10 +1,10 @@
-# AutoTyper — web and desktop assignment
+# AutoTyper — local macro automation for web and desktop
 
-The assignment implementation is the React + Express + PostgreSQL application
-in [web/README.md](web/README.md). It includes the MurGee-inspired script
-library, recorder, target-window typing engine, execution history, schema/seed
-data, setup steps, and production deployment instructions. The exact same React
-interface can also run as a standalone Windows desktop app through Electron:
+The current implementation is the React + Express + PostgreSQL application in
+[web/README.md](web/README.md). It is a MurGee-inspired macro utility with an
+ordered Macro Library, a visual Target Canvas, local history/insights, JSON
+portability, schedules, and a safety-first recorder. It runs locally in a
+browser or as the same standalone Windows desktop UI through Electron:
 
 ```powershell
 cd web
@@ -13,9 +13,14 @@ npm run desktop
 ```
 
 Build the portable desktop executable with `npm run desktop:package`; it is
-written to `web/desktop-dist/` and keeps its own persistent local script
+written to `web/desktop-dist/` and keeps its own persistent local macro
 library. The older PySide desktop project below remains preserved as a separate
 predecessor/reference, not as the current desktop UI.
+
+The current macro tool safely simulates all pointer and keyboard actions inside
+its Target Canvas. True OS-wide input, cloud/team sync, browser extensions, and
+encrypted shared vaults are deliberately future milestones rather than hidden
+behavior in a local build.
 
 The original Windows PySide desktop project remains below as a separate,
 preserved predecessor/reference.

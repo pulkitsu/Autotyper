@@ -15,6 +15,11 @@ let apiServer;
 let dataStore;
 let mainWindow;
 
+// Keep every renderer sandboxed even if a future window is added without an
+// explicit webPreferences block. The desktop app has no renderer-to-Node
+// bridge; all durable data stays behind its loopback API.
+app.enableSandbox();
+
 function listen(expressApp) {
   return new Promise((resolve, reject) => {
     const server = expressApp.listen(0, "127.0.0.1", () => resolve(server));
@@ -47,10 +52,14 @@ async function startDesktopApp() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webSecurity: true,
     },
   });
 
+  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  mainWindow.webContents.session.setPermissionCheckHandler(() => false);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-attach-webview", (event) => event.preventDefault());
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (url !== desktopUrl) event.preventDefault();
   });

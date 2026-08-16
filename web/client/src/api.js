@@ -56,6 +56,67 @@ export const api = {
   importScripts(scripts) {
     return request("/scripts/import", { method: "POST", body: JSON.stringify({ scripts }) });
   },
+  getMacros({ search = "", folder = "", tag = "" } = {}) {
+    const query = new URLSearchParams();
+    if (search) query.set("search", search);
+    if (folder) query.set("folder", folder);
+    if (tag) query.set("tag", tag);
+    const suffix = query.size ? `?${query}` : "";
+    return request(`/macros${suffix}`);
+  },
+  getMacro(id) {
+    return request(`/macros/${id}`);
+  },
+  createMacro(macro) {
+    return request("/macros", { method: "POST", body: JSON.stringify(macro) });
+  },
+  updateMacro(id, macro) {
+    return request(`/macros/${id}`, { method: "PUT", body: JSON.stringify(macro) });
+  },
+  deleteMacro(id) {
+    return request(`/macros/${id}`, { method: "DELETE" });
+  },
+  getMacroExport() {
+    return request("/macros/export");
+  },
+  importMacros(macros, mode = "merge") {
+    return request("/macros/import", { method: "POST", body: JSON.stringify({ macros, mode }) });
+  },
+  getMacroHistory({ limit, macroId } = {}) {
+    const query = new URLSearchParams();
+    if (limit) query.set("limit", String(limit));
+    if (macroId) query.set("macroId", macroId);
+    const suffix = query.size ? `?${query}` : "";
+    return request(`/macro-history${suffix}`);
+  },
+  createMacroHistory(entry) {
+    return request("/macro-history", { method: "POST", body: JSON.stringify(entry) });
+  },
+  clearMacroHistory() {
+    return request("/macro-history", { method: "DELETE" });
+  },
+  getMacroAnalytics() {
+    return request("/macro-analytics");
+  },
+  getMacroSchedules({ macroId } = {}) {
+    const suffix = macroId ? `?macroId=${encodeURIComponent(macroId)}` : "";
+    return request(`/macro-schedules${suffix}`);
+  },
+  createMacroSchedule(schedule) {
+    return request("/macro-schedules", { method: "POST", body: JSON.stringify(schedule) });
+  },
+  updateMacroSchedule(id, schedule) {
+    return request(`/macro-schedules/${id}`, { method: "PUT", body: JSON.stringify(schedule) });
+  },
+  deleteMacroSchedule(id) {
+    return request(`/macro-schedules/${id}`, { method: "DELETE" });
+  },
+  triggerMacroSchedule(id, payload = {}) {
+    return request(`/macro-schedules/${id}/triggered`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 export { ApiError };

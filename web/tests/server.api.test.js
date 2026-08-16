@@ -273,7 +273,7 @@ test("macro API stores ordered steps, boundaries, schedules, history, and analyt
   const exported = await request(api.baseUrl, "/macros/export");
   assert.equal(exported.response.status, 200);
   assert.equal(exported.body.type, "autotyper-macros");
-  assert.equal(exported.body.macros.length, 1);
+  assert.equal(exported.body.macros.some((entry) => entry.id === macro.id), true);
 
   const cleared = await request(api.baseUrl, "/macro-history", { method: "DELETE" });
   assert.equal(cleared.response.status, 200);

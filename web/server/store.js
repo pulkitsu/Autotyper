@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { Pool } from "pg";
 
-import { DEFAULT_SCRIPTS } from "./seed-data.js";
+import { DEFAULT_MACROS, DEFAULT_SCRIPTS } from "./seed-data.js";
 import { ApiError } from "./validation.js";
 
 const SCRIPT_COLUMNS = `
@@ -270,7 +270,7 @@ function calculateMacroAnalytics(entries) {
 export class MemoryStore {
   kind = "memory";
 
-  constructor(seed = DEFAULT_SCRIPTS) {
+  constructor(seed = DEFAULT_SCRIPTS, macroSeed = DEFAULT_MACROS) {
     const now = new Date().toISOString();
     this.scripts = seed.map((script) => ({
       id: randomUUID(),
@@ -279,7 +279,12 @@ export class MemoryStore {
       updatedAt: now,
     }));
     this.history = [];
-    this.macros = [];
+    this.macros = macroSeed.map((macro) => ({
+      id: randomUUID(),
+      ...clone(macro),
+      createdAt: now,
+      updatedAt: now,
+    }));
     this.macroHistory = [];
     this.macroSchedules = [];
   }
