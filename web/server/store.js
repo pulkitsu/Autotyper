@@ -28,8 +28,57 @@ const HISTORY_COLUMNS = `
   status
 `;
 
+const MACRO_COLUMNS = `
+  id,
+  name,
+  hotkey,
+  folder,
+  tags,
+  steps,
+  characters_per_second AS "charactersPerSecond",
+  start_delay_ms AS "startDelayMs",
+  click_interval_ms AS "clickIntervalMs",
+  repeat_config AS "repeat",
+  boundary,
+  focus_trigger AS "focusTrigger",
+  mail_merge AS "mailMerge",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt"
+`;
+
+const MACRO_HISTORY_COLUMNS = `
+  id,
+  macro_id AS "macroId",
+  macro_name AS "macroName",
+  hotkey,
+  started_at AS "startedAt",
+  duration_ms AS "durationMs",
+  status,
+  steps_completed AS "stepsCompleted",
+  time_saved_ms AS "timeSavedMs",
+  error_message AS "errorMessage"
+`;
+
+const MACRO_SCHEDULE_COLUMNS = `
+  id,
+  macro_id AS "macroId",
+  schedule_type AS "type",
+  enabled,
+  run_at AS "runAt",
+  starts_at AS "startsAt",
+  interval_ms AS "intervalMs",
+  last_run_at AS "lastRunAt",
+  next_run_at AS "nextRunAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt"
+`;
+
 function toIso(value) {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function toIsoOrNull(value) {
+  return value === null || value === undefined ? null : toIso(value);
 }
 
 function serializeScript(row) {
@@ -57,6 +106,65 @@ function serializeHistory(row) {
   };
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function asObjectOrNull(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function serializeMacro(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    hotkey: row.hotkey,
+    folder: row.folder ?? null,
+    tags: asArray(row.tags),
+    steps: asArray(row.steps),
+    charactersPerSecond: Number(row.charactersPerSecond),
+    startDelayMs: Number(row.startDelayMs),
+    clickIntervalMs: Number(row.clickIntervalMs),
+    repeat: asObjectOrNull(row.repeat) ?? { mode: "count", count: 1 },
+    boundary: asObjectOrNull(row.boundary),
+    focusTrigger: asObjectOrNull(row.focusTrigger),
+    mailMerge: asObjectOrNull(row.mailMerge),
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt),
+  };
+}
+
+function serializeMacroHistory(row) {
+  return {
+    id: row.id,
+    macroId: row.macroId ?? null,
+    macroName: row.macroName,
+    hotkey: row.hotkey,
+    startedAt: toIso(row.startedAt),
+    durationMs: Number(row.durationMs),
+    status: row.status,
+    stepsCompleted: Number(row.stepsCompleted),
+    timeSavedMs: Number(row.timeSavedMs),
+    errorMessage: row.errorMessage ?? null,
+  };
+}
+
+function serializeMacroSchedule(row) {
+  return {
+    id: row.id,
+    macroId: row.macroId,
+    type: row.type,
+    enabled: Boolean(row.enabled),
+    runAt: toIsoOrNull(row.runAt),
+    startsAt: toIsoOrNull(row.startsAt),
+    intervalMs: row.intervalMs === null || row.intervalMs === undefined ? null : Number(row.intervalMs),
+    lastRunAt: toIsoOrNull(row.lastRunAt),
+    nextRunAt: toIsoOrNull(row.nextRunAt),
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt),
+  };
+}
+
 function hotkeyConflict(hotkey) {
   return new ApiError(409, `The hotkey “${hotkey}” is already assigned to another script.`, {
     hotkey: "Choose a unique hotkey.",
@@ -66,6 +174,18 @@ function hotkeyConflict(hotkey) {
 function importDuplicateConflict(hotkey) {
   return new ApiError(409, `The import contains duplicate hotkey “${hotkey}”.`, {
     hotkey: "Each script must use a unique hotkey.",
+  });
+}
+
+function macroHotkeyConflict(hotkey) {
+  return new ApiError(409, `The hotkey “${hotkey}” is already assigned to another macro.`, {
+    hotkey: "Choose a unique macro hotkey.",
+  });
+}
+
+function importMacroDuplicateConflict(hotkey) {
+  return new ApiError(409, `The macro import contains duplicate hotkey “${hotkey}”.`, {
+    hotkey: "Each macro must use a unique hotkey.",
   });
 }
 
@@ -79,8 +199,68 @@ function assertImportHasUniqueHotkeys(scripts) {
   }
 }
 
+function assertImportHasUniqueMacroHotkeys(macros) {
+  const hotkeys = new Set();
+  for (const macro of macros) {
+    const key = macro.hotkey.toLowerCase();
+    if (hotkeys.has(key)) {
+      throw importMacroDuplicateConflict(macro.hotkey);
+    }
+    hotkeys.add(key);
+  }
+}
+
 function clone(value) {
   return structuredClone(value);
+}
+
+function calculateMacroAnalytics(entries) {
+  const totals = {
+    totalRuns: entries.length,
+    successfulRuns: 0,
+    failedRuns: 0,
+    stoppedRuns: 0,
+    rateLimitedRuns: 0,
+    totalDurationMs: 0,
+    timeSavedMs: 0,
+  };
+  const usage = new Map();
+  for (const entry of entries) {
+    totals.totalDurationMs += Number(entry.durationMs) || 0;
+    totals.timeSavedMs += Number(entry.timeSavedMs) || 0;
+    if (entry.status === "completed") totals.successfulRuns += 1;
+    else if (entry.status === "stopped") totals.stoppedRuns += 1;
+    else if (entry.status === "rate_limited") totals.rateLimitedRuns += 1;
+    else totals.failedRuns += 1;
+
+    const key = entry.macroId ?? `${entry.macroName}:${entry.hotkey}`;
+    const macro = usage.get(key) ?? {
+      macroId: entry.macroId ?? null,
+      macroName: entry.macroName,
+      runs: 0,
+      successfulRuns: 0,
+      totalDurationMs: 0,
+      timeSavedMs: 0,
+    };
+    macro.runs += 1;
+    macro.successfulRuns += entry.status === "completed" ? 1 : 0;
+    macro.totalDurationMs += Number(entry.durationMs) || 0;
+    macro.timeSavedMs += Number(entry.timeSavedMs) || 0;
+    usage.set(key, macro);
+  }
+  return {
+    summary: {
+      ...totals,
+      successRate: totals.totalRuns ? totals.successfulRuns / totals.totalRuns : 0,
+    },
+    mostUsedMacros: [...usage.values()]
+      .map((macro) => ({
+        ...macro,
+        successRate: macro.runs ? macro.successfulRuns / macro.runs : 0,
+      }))
+      .sort((a, b) => b.runs - a.runs || b.timeSavedMs - a.timeSavedMs || a.macroName.localeCompare(b.macroName))
+      .slice(0, 10),
+  };
 }
 
 /**
@@ -99,6 +279,9 @@ export class MemoryStore {
       updatedAt: now,
     }));
     this.history = [];
+    this.macros = [];
+    this.macroHistory = [];
+    this.macroSchedules = [];
   }
 
   async listScripts({ search = "" } = {}) {
@@ -213,6 +396,187 @@ export class MemoryStore {
     return cleared;
   }
 
+  async listMacros({ search = "", folder = "", tag = "" } = {}) {
+    const needle = search.trim().toLowerCase();
+    const normalizedFolder = folder.trim().toLowerCase();
+    const normalizedTag = tag.trim().toLowerCase();
+    return clone(
+      this.macros
+        .filter((macro) =>
+          (!needle || macro.name.toLowerCase().includes(needle) || macro.hotkey.toLowerCase().includes(needle)) &&
+          (!normalizedFolder || macro.folder?.toLowerCase() === normalizedFolder) &&
+          (!normalizedTag || macro.tags.some((entry) => entry.toLowerCase() === normalizedTag)),
+        )
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.name.localeCompare(b.name)),
+    );
+  }
+
+  async getMacro(id) {
+    const macro = this.macros.find((entry) => entry.id === id);
+    return macro ? clone(macro) : null;
+  }
+
+  async createMacro(input) {
+    this.#assertMacroHotkeyAvailable(input.hotkey);
+    const now = new Date().toISOString();
+    const macro = { id: randomUUID(), ...input, createdAt: now, updatedAt: now };
+    this.macros.push(macro);
+    return clone(macro);
+  }
+
+  async updateMacro(id, input) {
+    const index = this.macros.findIndex((entry) => entry.id === id);
+    if (index === -1) return null;
+    this.#assertMacroHotkeyAvailable(input.hotkey, id);
+    const updated = { ...this.macros[index], ...input, updatedAt: new Date().toISOString() };
+    this.macros[index] = updated;
+    return clone(updated);
+  }
+
+  async deleteMacro(id) {
+    const index = this.macros.findIndex((entry) => entry.id === id);
+    if (index === -1) return null;
+    const [deleted] = this.macros.splice(index, 1);
+    for (const event of this.macroHistory) {
+      if (event.macroId === id) event.macroId = null;
+    }
+    this.macroSchedules = this.macroSchedules.filter((schedule) => schedule.macroId !== id);
+    return clone(deleted);
+  }
+
+  async importMacros(macros, { mode }) {
+    assertImportHasUniqueMacroHotkeys(macros);
+    if (mode === "merge") {
+      for (const macro of macros) this.#assertMacroHotkeyAvailable(macro.hotkey);
+    }
+    if (mode === "replace") {
+      const removedIds = new Set(this.macros.map((macro) => macro.id));
+      this.macros = [];
+      this.macroSchedules = [];
+      for (const event of this.macroHistory) {
+        if (removedIds.has(event.macroId)) event.macroId = null;
+      }
+    }
+    const now = new Date().toISOString();
+    const created = macros.map((macro) => ({
+      id: randomUUID(),
+      ...macro,
+      createdAt: now,
+      updatedAt: now,
+    }));
+    this.macros.push(...created);
+    return clone(created);
+  }
+
+  async listMacroHistory({ limit, macroId = null } = {}) {
+    return clone(
+      this.macroHistory
+        .filter((entry) => !macroId || entry.macroId === macroId)
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .slice(0, limit),
+    );
+  }
+
+  async createMacroHistory(input) {
+    const macro = this.macros.find((entry) => entry.id === input.macroId);
+    if (!macro) throw new ApiError(404, "The macro for this execution no longer exists.");
+    const entry = {
+      id: randomUUID(),
+      macroId: macro.id,
+      macroName: macro.name,
+      hotkey: macro.hotkey,
+      startedAt: input.startedAt,
+      durationMs: input.durationMs,
+      status: input.status,
+      stepsCompleted: input.stepsCompleted,
+      timeSavedMs: input.timeSavedMs,
+      errorMessage: input.errorMessage,
+    };
+    this.macroHistory.push(entry);
+    return clone(entry);
+  }
+
+  async clearMacroHistory() {
+    const cleared = this.macroHistory.length;
+    this.macroHistory = [];
+    return cleared;
+  }
+
+  async getMacroAnalytics() {
+    return calculateMacroAnalytics(this.macroHistory);
+  }
+
+  async listMacroSchedules({ macroId = null } = {}) {
+    return clone(
+      this.macroSchedules
+        .filter((schedule) => !macroId || schedule.macroId === macroId)
+        .sort((a, b) => (a.nextRunAt ?? "").localeCompare(b.nextRunAt ?? "") || a.createdAt.localeCompare(b.createdAt)),
+    );
+  }
+
+  async getMacroSchedule(id) {
+    const schedule = this.macroSchedules.find((entry) => entry.id === id);
+    return schedule ? clone(schedule) : null;
+  }
+
+  async createMacroSchedule(input) {
+    const macro = this.macros.find((entry) => entry.id === input.macroId);
+    if (!macro) throw new ApiError(404, "The macro for this schedule no longer exists.");
+    const now = new Date().toISOString();
+    const schedule = {
+      id: randomUUID(),
+      ...input,
+      lastRunAt: null,
+      nextRunAt: input.enabled ? (input.type === "once" ? input.runAt : input.startsAt) : null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.macroSchedules.push(schedule);
+    return clone(schedule);
+  }
+
+  async updateMacroSchedule(id, input) {
+    const index = this.macroSchedules.findIndex((entry) => entry.id === id);
+    if (index === -1) return null;
+    const macro = this.macros.find((entry) => entry.id === input.macroId);
+    if (!macro) throw new ApiError(404, "The macro for this schedule no longer exists.");
+    const existing = this.macroSchedules[index];
+    const updated = {
+      ...existing,
+      ...input,
+      nextRunAt: input.enabled ? (input.type === "once" ? input.runAt : input.startsAt) : null,
+      updatedAt: new Date().toISOString(),
+    };
+    this.macroSchedules[index] = updated;
+    return clone(updated);
+  }
+
+  async deleteMacroSchedule(id) {
+    const index = this.macroSchedules.findIndex((entry) => entry.id === id);
+    if (index === -1) return null;
+    const [deleted] = this.macroSchedules.splice(index, 1);
+    return clone(deleted);
+  }
+
+  async markMacroScheduleTriggered(id, { triggeredAt }) {
+    const index = this.macroSchedules.findIndex((entry) => entry.id === id);
+    if (index === -1) return null;
+    const existing = this.macroSchedules[index];
+    const completedAt = new Date(triggeredAt).toISOString();
+    const isOneShot = existing.type === "once";
+    const updated = {
+      ...existing,
+      enabled: isOneShot ? false : existing.enabled,
+      lastRunAt: completedAt,
+      nextRunAt: !existing.enabled || isOneShot
+        ? null
+        : new Date(new Date(completedAt).getTime() + existing.intervalMs).toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.macroSchedules[index] = updated;
+    return clone(updated);
+  }
+
   async close() {}
 
   #assertHotkeyAvailable(hotkey, ignoredId = null) {
@@ -222,6 +586,13 @@ export class MemoryStore {
     if (duplicate) {
       throw hotkeyConflict(hotkey);
     }
+  }
+
+  #assertMacroHotkeyAvailable(hotkey, ignoredId = null) {
+    const duplicate = this.macros.find(
+      (entry) => entry.hotkey.toLowerCase() === hotkey.toLowerCase() && entry.id !== ignoredId,
+    );
+    if (duplicate) throw macroHotkeyConflict(hotkey);
   }
 }
 
@@ -281,6 +652,66 @@ export class FileStore extends MemoryStore {
     return cleared;
   }
 
+  async createMacro(input) {
+    const macro = await super.createMacro(input);
+    await this.#persist();
+    return macro;
+  }
+
+  async updateMacro(id, input) {
+    const macro = await super.updateMacro(id, input);
+    if (macro) await this.#persist();
+    return macro;
+  }
+
+  async deleteMacro(id) {
+    const macro = await super.deleteMacro(id);
+    if (macro) await this.#persist();
+    return macro;
+  }
+
+  async importMacros(macros, options) {
+    const imported = await super.importMacros(macros, options);
+    await this.#persist();
+    return imported;
+  }
+
+  async createMacroHistory(input) {
+    const entry = await super.createMacroHistory(input);
+    await this.#persist();
+    return entry;
+  }
+
+  async clearMacroHistory() {
+    const cleared = await super.clearMacroHistory();
+    await this.#persist();
+    return cleared;
+  }
+
+  async createMacroSchedule(input) {
+    const schedule = await super.createMacroSchedule(input);
+    await this.#persist();
+    return schedule;
+  }
+
+  async updateMacroSchedule(id, input) {
+    const schedule = await super.updateMacroSchedule(id, input);
+    if (schedule) await this.#persist();
+    return schedule;
+  }
+
+  async deleteMacroSchedule(id) {
+    const schedule = await super.deleteMacroSchedule(id);
+    if (schedule) await this.#persist();
+    return schedule;
+  }
+
+  async markMacroScheduleTriggered(id, input) {
+    const schedule = await super.markMacroScheduleTriggered(id, input);
+    if (schedule) await this.#persist();
+    return schedule;
+  }
+
   async #hydrate() {
     try {
       const raw = await readFile(this.filePath, "utf8");
@@ -290,6 +721,13 @@ export class FileStore extends MemoryStore {
       }
       this.scripts = structuredClone(parsed.scripts);
       this.history = structuredClone(parsed.history);
+      // Version 1 desktop libraries did not have macro collections. Treat them
+      // as an empty library rather than rejecting a user's existing data.
+      this.macros = Array.isArray(parsed.macros) ? structuredClone(parsed.macros) : [];
+      this.macroHistory = Array.isArray(parsed.macroHistory) ? structuredClone(parsed.macroHistory) : [];
+      this.macroSchedules = Array.isArray(parsed.macroSchedules)
+        ? structuredClone(parsed.macroSchedules)
+        : [];
     } catch (error) {
       if (error?.code === "ENOENT") {
         await this.#persist();
@@ -303,7 +741,14 @@ export class FileStore extends MemoryStore {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
     const data = JSON.stringify(
-      { version: 1, scripts: this.scripts, history: this.history },
+      {
+        version: 2,
+        scripts: this.scripts,
+        history: this.history,
+        macros: this.macros,
+        macroHistory: this.macroHistory,
+        macroSchedules: this.macroSchedules,
+      },
       null,
       2,
     );
@@ -485,6 +930,319 @@ export class PostgresStore {
     return result.rows[0].cleared;
   }
 
+  async listMacros({ search = "", folder = "", tag = "" } = {}) {
+    const conditions = [];
+    const values = [];
+    const add = (value) => {
+      values.push(value);
+      return `$${values.length}`;
+    };
+    const needle = search.trim();
+    if (needle) {
+      const parameter = add(`%${needle}%`);
+      conditions.push(`(name ILIKE ${parameter} OR hotkey ILIKE ${parameter})`);
+    }
+    if (folder.trim()) {
+      conditions.push(`lower(folder) = lower(${add(folder.trim())})`);
+    }
+    if (tag.trim()) {
+      conditions.push(
+        `EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) AS macro_tag(value)
+          WHERE lower(macro_tag.value) = lower(${add(tag.trim())}))`,
+      );
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    const result = await this.pool.query(
+      `SELECT ${MACRO_COLUMNS} FROM macros ${where} ORDER BY updated_at DESC, name ASC`,
+      values,
+    );
+    return result.rows.map(serializeMacro);
+  }
+
+  async getMacro(id) {
+    const result = await this.pool.query(
+      `SELECT ${MACRO_COLUMNS} FROM macros WHERE id = $1`,
+      [id],
+    );
+    return result.rowCount ? serializeMacro(result.rows[0]) : null;
+  }
+
+  async createMacro(input) {
+    await this.#assertMacroHotkeyAvailable(this.pool, input.hotkey);
+    const result = await this.pool.query(
+      `INSERT INTO macros (
+         name, hotkey, folder, tags, steps, characters_per_second, start_delay_ms,
+         click_interval_ms, repeat_config, boundary, focus_trigger, mail_merge
+       ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb)
+       RETURNING ${MACRO_COLUMNS}`,
+      [
+        input.name,
+        input.hotkey,
+        input.folder,
+        JSON.stringify(input.tags),
+        JSON.stringify(input.steps),
+        input.charactersPerSecond,
+        input.startDelayMs,
+        input.clickIntervalMs,
+        JSON.stringify(input.repeat),
+        input.boundary ? JSON.stringify(input.boundary) : null,
+        input.focusTrigger ? JSON.stringify(input.focusTrigger) : null,
+        input.mailMerge ? JSON.stringify(input.mailMerge) : null,
+      ],
+    );
+    return serializeMacro(result.rows[0]);
+  }
+
+  async updateMacro(id, input) {
+    const existing = await this.getMacro(id);
+    if (!existing) return null;
+    await this.#assertMacroHotkeyAvailable(this.pool, input.hotkey, id);
+    const result = await this.pool.query(
+      `UPDATE macros SET
+         name = $1,
+         hotkey = $2,
+         folder = $3,
+         tags = $4::jsonb,
+         steps = $5::jsonb,
+         characters_per_second = $6,
+         start_delay_ms = $7,
+         click_interval_ms = $8,
+         repeat_config = $9::jsonb,
+         boundary = $10::jsonb,
+         focus_trigger = $11::jsonb,
+         mail_merge = $12::jsonb
+       WHERE id = $13
+       RETURNING ${MACRO_COLUMNS}`,
+      [
+        input.name,
+        input.hotkey,
+        input.folder,
+        JSON.stringify(input.tags),
+        JSON.stringify(input.steps),
+        input.charactersPerSecond,
+        input.startDelayMs,
+        input.clickIntervalMs,
+        JSON.stringify(input.repeat),
+        input.boundary ? JSON.stringify(input.boundary) : null,
+        input.focusTrigger ? JSON.stringify(input.focusTrigger) : null,
+        input.mailMerge ? JSON.stringify(input.mailMerge) : null,
+        id,
+      ],
+    );
+    return serializeMacro(result.rows[0]);
+  }
+
+  async deleteMacro(id) {
+    const result = await this.pool.query(
+      `DELETE FROM macros WHERE id = $1 RETURNING ${MACRO_COLUMNS}`,
+      [id],
+    );
+    return result.rowCount ? serializeMacro(result.rows[0]) : null;
+  }
+
+  async importMacros(macros, { mode }) {
+    assertImportHasUniqueMacroHotkeys(macros);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      if (mode === "merge") {
+        for (const macro of macros) {
+          await this.#assertMacroHotkeyAvailable(client, macro.hotkey);
+        }
+      } else {
+        await client.query("DELETE FROM macros");
+      }
+      const created = [];
+      for (const macro of macros) {
+        const result = await client.query(
+          `INSERT INTO macros (
+             name, hotkey, folder, tags, steps, characters_per_second, start_delay_ms,
+             click_interval_ms, repeat_config, boundary, focus_trigger, mail_merge
+           ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb)
+           RETURNING ${MACRO_COLUMNS}`,
+          [
+            macro.name,
+            macro.hotkey,
+            macro.folder,
+            JSON.stringify(macro.tags),
+            JSON.stringify(macro.steps),
+            macro.charactersPerSecond,
+            macro.startDelayMs,
+            macro.clickIntervalMs,
+            JSON.stringify(macro.repeat),
+            macro.boundary ? JSON.stringify(macro.boundary) : null,
+            macro.focusTrigger ? JSON.stringify(macro.focusTrigger) : null,
+            macro.mailMerge ? JSON.stringify(macro.mailMerge) : null,
+          ],
+        );
+        created.push(serializeMacro(result.rows[0]));
+      }
+      await client.query("COMMIT");
+      return created;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listMacroHistory({ limit, macroId = null } = {}) {
+    const result = macroId
+      ? await this.pool.query(
+          `SELECT ${MACRO_HISTORY_COLUMNS} FROM macro_execution_history
+           WHERE macro_id = $1 ORDER BY started_at DESC LIMIT $2`,
+          [macroId, limit],
+        )
+      : await this.pool.query(
+          `SELECT ${MACRO_HISTORY_COLUMNS} FROM macro_execution_history
+           ORDER BY started_at DESC LIMIT $1`,
+          [limit],
+        );
+    return result.rows.map(serializeMacroHistory);
+  }
+
+  async createMacroHistory(input) {
+    const result = await this.pool.query(
+      `INSERT INTO macro_execution_history (
+         macro_id, macro_name, hotkey, started_at, duration_ms, status,
+         steps_completed, time_saved_ms, error_message
+       )
+       SELECT id, name, hotkey, $2, $3, $4, $5, $6, $7 FROM macros WHERE id = $1
+       RETURNING ${MACRO_HISTORY_COLUMNS}`,
+      [
+        input.macroId,
+        input.startedAt,
+        input.durationMs,
+        input.status,
+        input.stepsCompleted,
+        input.timeSavedMs,
+        input.errorMessage,
+      ],
+    );
+    if (!result.rowCount) {
+      throw new ApiError(404, "The macro for this execution no longer exists.");
+    }
+    return serializeMacroHistory(result.rows[0]);
+  }
+
+  async clearMacroHistory() {
+    const result = await this.pool.query(
+      `WITH deleted AS (DELETE FROM macro_execution_history RETURNING 1)
+       SELECT count(*)::int AS cleared FROM deleted`,
+    );
+    return result.rows[0].cleared;
+  }
+
+  async getMacroAnalytics() {
+    const result = await this.pool.query(
+      `SELECT ${MACRO_HISTORY_COLUMNS} FROM macro_execution_history ORDER BY started_at DESC LIMIT 10000`,
+    );
+    return calculateMacroAnalytics(result.rows.map(serializeMacroHistory));
+  }
+
+  async listMacroSchedules({ macroId = null } = {}) {
+    const result = macroId
+      ? await this.pool.query(
+          `SELECT ${MACRO_SCHEDULE_COLUMNS} FROM macro_schedules
+           WHERE macro_id = $1 ORDER BY COALESCE(next_run_at, created_at), created_at`,
+          [macroId],
+        )
+      : await this.pool.query(
+          `SELECT ${MACRO_SCHEDULE_COLUMNS} FROM macro_schedules
+           ORDER BY COALESCE(next_run_at, created_at), created_at`,
+        );
+    return result.rows.map(serializeMacroSchedule);
+  }
+
+  async getMacroSchedule(id) {
+    const result = await this.pool.query(
+      `SELECT ${MACRO_SCHEDULE_COLUMNS} FROM macro_schedules WHERE id = $1`,
+      [id],
+    );
+    return result.rowCount ? serializeMacroSchedule(result.rows[0]) : null;
+  }
+
+  async createMacroSchedule(input) {
+    const macro = await this.getMacro(input.macroId);
+    if (!macro) throw new ApiError(404, "The macro for this schedule no longer exists.");
+    const nextRunAt = input.enabled ? (input.type === "once" ? input.runAt : input.startsAt) : null;
+    const result = await this.pool.query(
+      `INSERT INTO macro_schedules (
+         macro_id, schedule_type, enabled, run_at, starts_at, interval_ms, next_run_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING ${MACRO_SCHEDULE_COLUMNS}`,
+      [
+        input.macroId,
+        input.type,
+        input.enabled,
+        input.runAt,
+        input.startsAt,
+        input.intervalMs,
+        nextRunAt,
+      ],
+    );
+    return serializeMacroSchedule(result.rows[0]);
+  }
+
+  async updateMacroSchedule(id, input) {
+    const existing = await this.getMacroSchedule(id);
+    if (!existing) return null;
+    const macro = await this.getMacro(input.macroId);
+    if (!macro) throw new ApiError(404, "The macro for this schedule no longer exists.");
+    const nextRunAt = input.enabled ? (input.type === "once" ? input.runAt : input.startsAt) : null;
+    const result = await this.pool.query(
+      `UPDATE macro_schedules SET
+         macro_id = $1,
+         schedule_type = $2,
+         enabled = $3,
+         run_at = $4,
+         starts_at = $5,
+         interval_ms = $6,
+         next_run_at = $7
+       WHERE id = $8
+       RETURNING ${MACRO_SCHEDULE_COLUMNS}`,
+      [
+        input.macroId,
+        input.type,
+        input.enabled,
+        input.runAt,
+        input.startsAt,
+        input.intervalMs,
+        nextRunAt,
+        id,
+      ],
+    );
+    return serializeMacroSchedule(result.rows[0]);
+  }
+
+  async deleteMacroSchedule(id) {
+    const result = await this.pool.query(
+      `DELETE FROM macro_schedules WHERE id = $1 RETURNING ${MACRO_SCHEDULE_COLUMNS}`,
+      [id],
+    );
+    return result.rowCount ? serializeMacroSchedule(result.rows[0]) : null;
+  }
+
+  async markMacroScheduleTriggered(id, { triggeredAt }) {
+    const existing = await this.getMacroSchedule(id);
+    if (!existing) return null;
+    const isOneShot = existing.type === "once";
+    const nextRunAt = !existing.enabled || isOneShot
+      ? null
+      : new Date(new Date(triggeredAt).getTime() + existing.intervalMs).toISOString();
+    const result = await this.pool.query(
+      `UPDATE macro_schedules SET
+         enabled = CASE WHEN schedule_type = 'once' THEN false ELSE enabled END,
+         last_run_at = $1,
+         next_run_at = $2
+       WHERE id = $3
+       RETURNING ${MACRO_SCHEDULE_COLUMNS}`,
+      [triggeredAt, nextRunAt, id],
+    );
+    return serializeMacroSchedule(result.rows[0]);
+  }
+
   async close() {
     await this.pool.end();
   }
@@ -502,6 +1260,19 @@ export class PostgresStore {
     if (result.rowCount) {
       throw hotkeyConflict(hotkey);
     }
+  }
+
+  async #assertMacroHotkeyAvailable(queryable, hotkey, ignoredId = null) {
+    const result = ignoredId
+      ? await queryable.query(
+          `SELECT id FROM macros WHERE lower(hotkey) = lower($1) AND id <> $2 LIMIT 1`,
+          [hotkey, ignoredId],
+        )
+      : await queryable.query(
+          `SELECT id FROM macros WHERE lower(hotkey) = lower($1) LIMIT 1`,
+          [hotkey],
+        );
+    if (result.rowCount) throw macroHotkeyConflict(hotkey);
   }
 }
 
